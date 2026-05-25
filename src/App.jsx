@@ -39,7 +39,7 @@ export default function App() {
     setError(null)
 
     try {
-      const response = await fetch('http://localhost:5000/analyze', {
+      const response = await fetch('https://signalforge-ai.onrender.com/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
