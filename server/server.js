@@ -2,6 +2,9 @@ import express from "express"
 import cors from "cors"
 import dotenv from "dotenv"
 import Anthropic from "@anthropic-ai/sdk"
+import { x402ResourceServer } from "@okxweb3/x402-core/server"
+import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server"
+import { paymentMiddleware } from "@okxweb3/x402-express"
 dotenv.config()
 
 const app = express()
@@ -11,6 +14,38 @@ app.use(express.json())
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
+
+const mockFacilitator = {
+  async getSupported() {
+    return {
+      kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }],
+      extensions: [],
+      signers: {}
+    };
+  },
+  async verify() { return { isValid: true }; },
+  async settle() { return { success: true, transaction: "0x0", network: "eip155:196" }; }
+};
+
+const resourceServer = new x402ResourceServer(mockFacilitator)
+resourceServer.register("eip155:196", new ExactEvmScheme())
+await resourceServer.initialize()
+
+const routesConfig = {
+  "/analyze": {
+    accepts: [
+      {
+        scheme: "exact",
+        network: "eip155:196",
+        payTo: process.env.PAYMENT_ADDRESS || "0x0000000000000000000000000000000000000000",
+        price: "0.01",
+      },
+    ],
+    description: "SignalForge AI Analysis",
+  },
+}
+
+app.use(paymentMiddleware(routesConfig, resourceServer, undefined, undefined, false))
 
 app.post("/analyze", async (req, res) => {
   try {

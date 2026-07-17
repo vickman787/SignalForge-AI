@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Ping Render Backend
         # Replace the URL below with your actual Render backend URL
-        run: curl -s https://your-app-name.onrender.com > /dev/null
+        run: curl -s https://signalforge-ai.onrender.com > /dev/null

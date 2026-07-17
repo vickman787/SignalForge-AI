@@ -54,11 +54,19 @@ Instead of returning a wall of text, the AI's output is formatted into a highly 
    *Create a `.env` file in the `server` directory and add your key:*
    ```env
    ANTHROPIC_API_KEY=your_api_key_here
+   PAYMENT_ADDRESS=0xYourWalletAddressHere
    ```
    *Start the server:*
    ```bash
    node server.js
    ```
+
+### 💎 Monetization (OKX Agent Payments Protocol - x402)
+SignalForge is integrated with the **OKX x402 Agent Payments Protocol**. 
+The backend `/analyze` route is protected by a paywall. By default, it charges **$0.01** per request on the **X Layer (eip155:196)**.
+When an AI agent or user hits the backend, they will receive a `402 Payment Required` response containing the payment requirements. They must sign an EIP-712 transaction, which the server locally verifies before generating the response.
+
+Make sure to set the `PAYMENT_ADDRESS` in your `.env` file to your EVM wallet address to receive the crypto payments!
 
 3. **Setup the Frontend:**
    *Open a new terminal in the root `SignalForge-AI` directory:*
