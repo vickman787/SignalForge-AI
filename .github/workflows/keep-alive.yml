@@ -1,0 +1,15 @@
+name: Keep Render Awake
+
+on:
+  schedule:
+    # Runs every 14 minutes to prevent Render's 15-minute inactivity spin-down
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub UI
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Backend
+        # Replace the URL below with your actual Render backend URL
+        run: curl -s https://your-app-name.onrender.com > /dev/null

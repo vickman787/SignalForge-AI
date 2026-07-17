@@ -1,0 +1,1 @@
+{"name":"server","version":"1.0.0","description":"SignalForge Claude Backend","main":"server.js","type":"module","scripts":{"dev":"node server.js"},"keywords":[],"author":"","license":"ISC","dependencies":{"@anthropic-ai/sdk":"^0.98.1","cors":"^2.8.6","dotenv":"^17.4.2","duck-duck-scrape":"^2.2.7","express":"^5.2.1","googlethis":"^1.8.0"}}
