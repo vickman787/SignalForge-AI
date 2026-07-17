@@ -41,7 +41,7 @@ const routesConfig = {
         price: "0.01",
       },
     ],
-    description: "SignalForge AI Analysis",
+    description: "Narrative Intelligence API",
   },
 }
 
