@@ -25,7 +25,35 @@ if (!process.env.PAYMENT_ADDRESS) {
 // every request unconditionally.
 const resourceServer = new x402ResourceServer()
 resourceServer.register("eip155:196", new ExactEvmScheme())
-await resourceServer.initialize()
+
+// initialize() needs a round-trip to the facilitator; don't let a transient
+// failure crash the deploy. Retry in the background and fail requests closed
+// (503) until verification is actually available.
+let paymentsReady = false
+async function initPayments() {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await resourceServer.initialize()
+      paymentsReady = true
+      console.log("x402 facilitator initialized, payments enabled")
+      return
+    } catch (err) {
+      console.error(
+        `x402 facilitator init failed (attempt ${attempt}): ${err.message}`,
+        err.cause ? `| cause: ${err.cause.message || err.cause}` : ""
+      )
+      await new Promise((r) => setTimeout(r, Math.min(60_000, 5_000 * attempt)))
+    }
+  }
+}
+initPayments()
+
+app.use((req, res, next) => {
+  if (!paymentsReady) {
+    return res.status(503).json({ error: "Payment verification is starting up, please retry shortly" })
+  }
+  next()
+})
 
 const routesConfig = {
   "/analyze": {
