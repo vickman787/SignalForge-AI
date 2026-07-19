@@ -3,6 +3,7 @@ import cors from "cors"
 import dotenv from "dotenv"
 import Anthropic from "@anthropic-ai/sdk"
 import { x402ResourceServer } from "@okxweb3/x402-core/server"
+import { OKXFacilitatorClient } from "@okxweb3/x402-core"
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server"
 import { paymentMiddleware } from "@okxweb3/x402-express"
 dotenv.config()
@@ -18,12 +19,23 @@ const client = new Anthropic({
 if (!process.env.PAYMENT_ADDRESS) {
   throw new Error("Missing PAYMENT_ADDRESS — refusing to start, payments would go to the zero address")
 }
+for (const key of ["OKX_API_KEY", "OKX_SECRET_KEY", "OKX_PASSPHRASE"]) {
+  if (!process.env[key]) {
+    throw new Error(`Missing ${key} — the OKX facilitator requires developer-portal credentials (https://web3.okx.com/onchainos/dev-portal)`)
+  }
+}
 
-// No facilitator client passed: defaults to the public OKX facilitator
-// (https://web3.okx.com/facilitator), which performs real on-chain
-// verification and settlement — unlike the previous mock that approved
-// every request unconditionally.
-const resourceServer = new x402ResourceServer()
+// Real OKX facilitator (per @okxweb3/x402-express README): performs genuine
+// on-chain verification and settlement — unlike the previous mock that
+// approved every request unconditionally. Auth uses OKX developer-portal
+// credentials; anonymous access to the facilitator endpoints is not served.
+const facilitatorClient = new OKXFacilitatorClient({
+  apiKey: process.env.OKX_API_KEY,
+  secretKey: process.env.OKX_SECRET_KEY,
+  passphrase: process.env.OKX_PASSPHRASE,
+  syncSettle: true,
+})
+const resourceServer = new x402ResourceServer(facilitatorClient)
 resourceServer.register("eip155:196", new ExactEvmScheme())
 
 // initialize() needs a round-trip to the facilitator; don't let a transient
