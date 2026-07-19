@@ -15,19 +15,15 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
-const mockFacilitator = {
-  async getSupported() {
-    return {
-      kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }],
-      extensions: [],
-      signers: {}
-    };
-  },
-  async verify() { return { isValid: true }; },
-  async settle() { return { success: true, transaction: "0x0", network: "eip155:196" }; }
-};
+if (!process.env.PAYMENT_ADDRESS) {
+  throw new Error("Missing PAYMENT_ADDRESS — refusing to start, payments would go to the zero address")
+}
 
-const resourceServer = new x402ResourceServer(mockFacilitator)
+// No facilitator client passed: defaults to the public OKX facilitator
+// (https://web3.okx.com/facilitator), which performs real on-chain
+// verification and settlement — unlike the previous mock that approved
+// every request unconditionally.
+const resourceServer = new x402ResourceServer()
 resourceServer.register("eip155:196", new ExactEvmScheme())
 await resourceServer.initialize()
 
@@ -37,7 +33,7 @@ const routesConfig = {
       {
         scheme: "exact",
         network: "eip155:196",
-        payTo: process.env.PAYMENT_ADDRESS || "0x0000000000000000000000000000000000000000",
+        payTo: process.env.PAYMENT_ADDRESS,
         price: "0.01",
       },
     ],
