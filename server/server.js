@@ -83,9 +83,97 @@ const routesConfig = {
 
 app.use(paymentMiddleware(routesConfig, resourceServer, undefined, undefined, false))
 
+async function fetchJson(url, timeoutMs = 8000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`)
+    return await res.json()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function fetchLivePrices() {
+  // Primary: CoinGecko (keyless, but aggressively rate-limited)
+  try {
+    const data = await fetchJson(
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,dogecoin&vs_currencies=usd"
+    )
+    const prices = {
+      BTC: data.bitcoin?.usd,
+      ETH: data.ethereum?.usd,
+      SOL: data.solana?.usd,
+      DOGE: data.dogecoin?.usd,
+    }
+    if (Object.values(prices).every((p) => typeof p === "number")) {
+      return { source: "CoinGecko", prices }
+    }
+    throw new Error("CoinGecko returned incomplete data")
+  } catch (err) {
+    console.warn("CoinGecko price fetch failed, falling back to Binance:", err.message)
+  }
+  // Fallback: Binance public ticker (keyless, high rate limits)
+  const symbols = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT", DOGE: "DOGEUSDT" }
+  const data = await fetchJson(
+    `https://api.binance.com/api/v3/ticker/price?symbols=${encodeURIComponent(JSON.stringify(Object.values(symbols)))}`
+  )
+  const bySymbol = Object.fromEntries(data.map((t) => [t.symbol, Number(t.price)]))
+  const prices = Object.fromEntries(
+    Object.entries(symbols).map(([name, sym]) => [name, bySymbol[sym]])
+  )
+  if (!Object.values(prices).every((p) => Number.isFinite(p))) {
+    throw new Error("Binance returned incomplete data")
+  }
+  return { source: "Binance", prices }
+}
+
+async function fetchLiveNews() {
+  // Keyless RSS feeds — Cointelegraph primary, CoinDesk fallback
+  const feeds = [
+    { name: "Cointelegraph", url: "https://cointelegraph.com/rss" },
+    { name: "CoinDesk", url: "https://www.coindesk.com/arc/outboundfeeds/rss/" },
+  ]
+  let lastError
+  for (const feed of feeds) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 8000)
+      const res = await fetch(feed.url, {
+        headers: { "User-Agent": "SignalForge/1.0" },
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+      if (!res.ok) throw new Error(`HTTP ${res.status} from ${feed.name}`)
+      const xml = await res.text()
+      const items = [...xml.matchAll(
+        /<item>[\s\S]*?<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g
+      )].slice(0, 5)
+      if (items.length === 0) throw new Error(`${feed.name} feed returned no items`)
+      return items
+        .map(([, title, date], i) => `${i + 1}. [${date.trim()}] ${title.trim()} (${feed.name})`)
+        .join("\n")
+    } catch (err) {
+      lastError = err
+      console.warn(`News fetch from ${feed.name} failed:`, err.message)
+    }
+  }
+  throw lastError
+}
+
 app.post("/analyze", async (req, res) => {
   try {
-    const { input, mode } = req.body
+    // The payment middleware only settles (charges the buyer) when the
+    // response status is < 400 — any 4xx/5xx from here means the buyer
+    // signed but is NOT charged. Validate before doing paid work.
+    const { input, mode } = req.body ?? {}
+
+    if (typeof input !== "string" || input.trim().length === 0) {
+      return res.status(400).json({
+        error: 'missing required body param "input" — the text or topic to analyze',
+      })
+    }
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(500).json({ error: "Missing ANTHROPIC_API_KEY" })
@@ -132,7 +220,7 @@ app.post("/analyze", async (req, res) => {
     let currentMessages = [
       {
         role: "user",
-        content: `Mode: ${mode}\n\nAnalyze:\n${input}`,
+        content: `Mode: ${mode || "general narrative analysis"}\n\nAnalyze:\n${input}`,
       }
     ]
     
@@ -143,7 +231,7 @@ app.post("/analyze", async (req, res) => {
       iterations++;
       
       const response = await client.messages.create({
-        model: "claude-sonnet-5",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 4096,
         system: "You are SignalForge AI, a highly capable crypto narrative intelligence engine. Analyze the given narrative in the context of the given mode.",
         messages: currentMessages,
@@ -171,11 +259,10 @@ app.post("/analyze", async (req, res) => {
               let topResults = "";
 
               if (query.includes("price") || query.includes("usd")) {
-                const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,dogecoin&vs_currencies=usd");
-                const data = await res.json();
-                topResults = `Live Prices (USD): Bitcoin: $${data.bitcoin?.usd}, Ethereum: $${data.ethereum?.usd}, Solana: $${data.solana?.usd}, Dogecoin: $${data.dogecoin?.usd}`;
+                const { source, prices } = await fetchLivePrices();
+                topResults = `Live Prices in USD (source: ${source}): Bitcoin: $${prices.BTC}, Ethereum: $${prices.ETH}, Solana: $${prices.SOL}, Dogecoin: $${prices.DOGE}`;
               } else if (query.includes("news") || query.includes("headline")) {
-                topResults = "Live News Headlines:\n1. Bitcoin ETFs see record inflows as institutions buy the dip.\n2. Ethereum ecosystem expands rapidly following new network upgrades.\n3. Market sentiment swings heavily towards greed as retail attention spikes.";
+                topResults = `Live News Headlines:\n${await fetchLiveNews()}`;
               } else {
                 topResults = "No real-time web results found for this specific query. Please proceed with the latest crypto prices or news context if already gathered, or use your general knowledge.";
               }
