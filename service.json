@@ -1,0 +1,9 @@
+[
+  {
+    "serviceName": "Narrative Intelligence API",
+    "serviceDescription": "A highly advanced, multi-modal crypto narrative intelligence engine. It pulls live market data and news to generate structured, actionable market intelligence, providing proprietary scores, market psychology analysis, and trading setups.\nInput required: target asset or query parameters.",
+    "serviceType": "A2MCP",
+    "fee": "0.05",
+    "endpoint": "https://signalforge-ai.onrender.com/analyze"
+  }
+]

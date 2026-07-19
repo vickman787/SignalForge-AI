@@ -74,7 +74,7 @@ const routesConfig = {
         scheme: "exact",
         network: "eip155:196",
         payTo: process.env.PAYMENT_ADDRESS,
-        price: "0.01",
+        price: "0.05",
       },
     ],
     description: "Narrative Intelligence API",
