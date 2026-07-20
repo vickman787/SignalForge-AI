@@ -119,12 +119,17 @@ app.use((req, res, next) => {
 
 app.use(paymentMiddleware(routesConfig, resourceServer, undefined, undefined, false))
 
-app.post("/analyze", async (req, res) => {
+// Both verbs: marketplace task tooling replays paid requests with GET
+// (params in query string), while direct x402 buyers POST a JSON body.
+app.all("/analyze", async (req, res) => {
+  if (req.method !== "POST" && req.method !== "GET") {
+    return res.status(405).json({ error: "use GET or POST" })
+  }
   try {
     // The payment middleware only settles (charges the buyer) when the
     // response status is < 400 — any 4xx/5xx from here means the buyer
     // signed but is NOT charged. Validate before doing paid work.
-    let { input, mode } = req.body ?? {}
+    let { input, mode } = req.method === "GET" ? (req.query ?? {}) : (req.body ?? {})
 
     // Marketplace task replays arrive with an empty body (the task flow does
     // not populate business params), so a missing input falls back to a
