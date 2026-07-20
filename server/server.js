@@ -82,6 +82,41 @@ const routesConfig = {
   },
 }
 
+// Marketplace compatibility: OKX task tooling (task-402-pay) reads the x402
+// challenge from the 402 response BODY, but @okxweb3/x402-express only sets
+// the PAYMENT-REQUIRED header and sends an empty {} body. Mirror the decoded
+// challenge into the body — plus an input schema so buyers know the request
+// shape — matching the pattern of endpoints that work through the marketplace.
+const INPUT_SCHEMA = {
+  description:
+    "POST body for /analyze. All fields are optional — an empty body analyzes the overall current crypto market narrative.",
+  fields: {
+    input: 'string — the narrative, topic, or question to analyze. Default: overall crypto market narrative',
+    mode: 'string — optional analysis mode/context. Default: "general narrative analysis"',
+  },
+  example: { input: "analyze the current bitcoin narrative", mode: "general narrative analysis" },
+}
+
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res)
+  res.json = (body) => {
+    if (res.statusCode === 402) {
+      const header = res.get("PAYMENT-REQUIRED")
+      if (header && (!body || Object.keys(body).length === 0)) {
+        try {
+          const challenge = JSON.parse(Buffer.from(header, "base64").toString("utf8"))
+          challenge.input = INPUT_SCHEMA
+          body = challenge
+        } catch (err) {
+          console.warn("Could not mirror PAYMENT-REQUIRED header into 402 body:", err.message)
+        }
+      }
+    }
+    return originalJson(body)
+  }
+  next()
+})
+
 app.use(paymentMiddleware(routesConfig, resourceServer, undefined, undefined, false))
 
 app.post("/analyze", async (req, res) => {
@@ -89,11 +124,17 @@ app.post("/analyze", async (req, res) => {
     // The payment middleware only settles (charges the buyer) when the
     // response status is < 400 — any 4xx/5xx from here means the buyer
     // signed but is NOT charged. Validate before doing paid work.
-    const { input, mode } = req.body ?? {}
+    let { input, mode } = req.body ?? {}
 
-    if (typeof input !== "string" || input.trim().length === 0) {
+    // Marketplace task replays arrive with an empty body (the task flow does
+    // not populate business params), so a missing input falls back to a
+    // useful default instead of failing the paid request.
+    if (input == null || (typeof input === "string" && input.trim().length === 0)) {
+      input = "Analyze the current overall crypto market narrative"
+    }
+    if (typeof input !== "string") {
       return res.status(400).json({
-        error: 'missing required body param "input" — the text or topic to analyze',
+        error: 'body param "input" must be a string — the text or topic to analyze',
       })
     }
 
