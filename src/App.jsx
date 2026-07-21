@@ -28,7 +28,8 @@ export default function App() {
     setError(null)
 
     try {
-      const response = await fetch('http://localhost:5000/analyze', {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://signalforge-ai.onrender.com'
+      const response = await fetch(`${apiBase}/demo-analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

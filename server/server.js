@@ -10,6 +10,7 @@ import { runAnalysis } from "./analyze.js"
 dotenv.config()
 
 const app = express()
+app.set("trust proxy", 1) // Render sits behind a proxy; needed for req.ip to reflect the real client
 app.use(cors())
 app.use(express.json())
 
@@ -61,7 +62,9 @@ async function initPayments() {
 }
 initPayments()
 
-app.use((req, res, next) => {
+// Scoped to /analyze only — the free /demo-analyze route has nothing to do
+// with x402 and must not be blocked by facilitator startup status.
+app.use("/analyze", (req, res, next) => {
   if (!paymentsReady) {
     return res.status(503).json({ error: "Payment verification is starting up, please retry shortly" })
   }
@@ -154,6 +157,58 @@ app.all("/analyze", async (req, res) => {
     res.status(500).json({
       error: error.message || "Anthropic analysis failed",
     })
+  }
+})
+
+// Free, rate-limited demo path for the web app / marketing site — human
+// visitors have no crypto wallet to pay the x402 endpoint. Same analysis
+// logic as /analyze, just without the payment gate, capped per IP so it
+// can't be scripted into a free substitute for the paid API.
+const DEMO_LIMIT = 5
+const DEMO_WINDOW_MS = 24 * 60 * 60 * 1000
+const demoUsage = new Map() // ip -> array of request timestamps (ms)
+
+setInterval(() => {
+  const cutoff = Date.now() - DEMO_WINDOW_MS
+  for (const [ip, timestamps] of demoUsage) {
+    const kept = timestamps.filter((t) => t > cutoff)
+    if (kept.length === 0) demoUsage.delete(ip)
+    else demoUsage.set(ip, kept)
+  }
+}, 60 * 60 * 1000).unref()
+
+app.post("/demo-analyze", async (req, res) => {
+  try {
+    const ip = req.ip || "unknown"
+    const cutoff = Date.now() - DEMO_WINDOW_MS
+    const recent = (demoUsage.get(ip) || []).filter((t) => t > cutoff)
+
+    if (recent.length >= DEMO_LIMIT) {
+      return res.status(429).json({
+        error: `Demo limit reached (${DEMO_LIMIT} per day). Use the paid /analyze endpoint via the OKX Agent Payments Protocol for unlimited access.`,
+      })
+    }
+
+    let { input, mode } = req.body ?? {}
+    if (input == null || (typeof input === "string" && input.trim().length === 0)) {
+      input = "Analyze the current overall crypto market narrative"
+    }
+    if (typeof input !== "string") {
+      return res.status(400).json({ error: 'body param "input" must be a string' })
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(500).json({ error: "Missing ANTHROPIC_API_KEY" })
+    }
+
+    recent.push(Date.now())
+    demoUsage.set(ip, recent)
+
+    const analysisResult = await runAnalysis(client, input, mode)
+    res.json({ result: analysisResult, demo: true, remaining: DEMO_LIMIT - recent.length })
+  } catch (error) {
+    console.error("Demo analyze error:", error.message)
+    res.status(500).json({ error: error.message || "Analysis failed" })
   }
 })
 
