@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react'
 import logo from './assets/logo.png'
+import { useResearchHistory, relativeTime } from './hooks/useResearchHistory'
 
 export default function App() {
   const [input, setInput] = useState('')
   const [mode, setMode] = useState('Research Mode')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const { entries, addEntry, removeEntry, clearEntries } = useResearchHistory()
 
 
   const [result, setResult] = useState({
@@ -48,7 +50,7 @@ export default function App() {
         throw new Error('Invalid response format')
       }
 
-      setResult({
+      const nextResult = {
         scores: {
           virality: analysis.scores?.virality ?? result.scores.virality,
           attention: analysis.scores?.attention ?? result.scores.attention,
@@ -65,7 +67,10 @@ export default function App() {
           analysis.viralContentAngles || result.viralContentAngles,
         alphaOpportunities:
           analysis.alphaOpportunities || result.alphaOpportunities,
-      })
+      }
+
+      setResult(nextResult)
+      addEntry({ query: input.trim(), mode, result: nextResult })
     } catch (err) {
       setError(err.message || 'Analysis failed')
     } finally {
@@ -73,6 +78,13 @@ export default function App() {
     }
   }
 
+
+  const restoreEntry = (entry) => {
+    setResult(entry.result)
+    setInput(entry.query)
+    setMode(entry.mode)
+    setError(null)
+  }
 
   const scoreCards = [
     ['Virality Score', result.scores.virality],
@@ -91,7 +103,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#040608] text-white flex">
       <aside className="w-72 border-r border-white/10 bg-black/30 p-6 hidden md:flex flex-col justify-between">
-        <div>
+        <div className="min-h-0 flex flex-col">
           <div className="flex items-center gap-3 mb-10">
             <div className="w-12 h-12 rounded-2xl bg-black/60 border border-white/6 flex items-center justify-center">
               <img src={logo} alt="SignalForge" className="w-8 h-8" />
@@ -120,9 +132,54 @@ export default function App() {
               )
             )}
           </nav>
+
+          {entries.length > 0 && (
+            <div className="mt-8 min-h-0 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs uppercase tracking-wider text-slate-500">
+                  Recent Research
+                </h3>
+                <button
+                  onClick={clearEntries}
+                  className="text-xs text-slate-500 hover:text-red-400 transition"
+                  title="Clear all history"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="space-y-2 overflow-y-auto pr-1 max-h-72">
+                {entries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="group relative rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition"
+                  >
+                    <button
+                      onClick={() => restoreEntry(entry)}
+                      className="w-full text-left px-3 py-2.5 pr-8"
+                    >
+                      <p className="text-sm text-slate-200 truncate">
+                        {entry.query || 'Untitled query'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {relativeTime(entry.timestamp)} · {entry.mode}
+                      </p>
+                    </button>
+                    <button
+                      onClick={() => removeEntry(entry.id)}
+                      className="absolute top-2 right-2 w-5 h-5 rounded-md text-slate-600 hover:text-red-400 hover:bg-white/10 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs"
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-cyan-400/10 to-purple-500/10 border border-white/10">
+        <div className="mt-6 p-4 rounded-2xl bg-gradient-to-br from-cyan-400/10 to-purple-500/10 border border-white/10">
           <p className="text-sm text-slate-300">
             AI-powered narrative analysis for crypto creators, traders, and researchers.
           </p>
