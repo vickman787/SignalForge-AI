@@ -160,6 +160,17 @@ app.all("/analyze", async (req, res) => {
   }
 })
 
+// Cheap liveness probe for uptime pingers — no AI call, no payment gate.
+// Reports facilitator readiness so a monitor can distinguish "process up"
+// from "actually able to serve paid requests".
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    paymentsReady,
+    uptimeSeconds: Math.floor(process.uptime()),
+  })
+})
+
 // Free, rate-limited demo path for the web app / marketing site — human
 // visitors have no crypto wallet to pay the x402 endpoint. Same analysis
 // logic as /analyze, just without the payment gate, capped per IP so it
